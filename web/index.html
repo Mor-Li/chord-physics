@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Plomp-Levelt 不协和度探针 · 交互钢琴</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+      integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous" />
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
+        integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+        integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"
+        onload="renderMathInElement(document.body,{delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}]});"></script>
+<link rel="stylesheet" href="styles.css" />
+<script defer src="js/physics.js"></script>
+<script defer src="js/chords.js"></script>
+<script defer src="js/audio.js"></script>
+<script defer src="js/ui.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Plomp-Levelt <span class="accent">不协和度探针</span> · 交互钢琴</h1>
+      <div class="sub">点键 · 算粗糙度 · 按 ▶ 听声 · 验证耳朵和数学的一致性</div>
+    </div>
+    <div class="sub">C4 (MIDI 60) → B5 (MIDI 83) · 24 键 · 每音 6 谐波 · ρ=0.88</div>
+  </header>
+
+  <div class="main-grid">
+    <!-- LEFT -->
+    <div>
+      <div class="piano-card">
+        <div class="shortcut-row">
+          <button class="pill" data-preset="60,64,67">C 大三和弦 · 4:5:6</button>
+          <button class="pill" data-preset="60,63,67">C 小三和弦 · 10:12:15</button>
+          <button class="pill" data-preset="60,65,67">C Sus4 · 挂四</button>
+          <button class="pill" data-preset="60,67">C 纯五度 · 3:2</button>
+          <button class="pill neutral" data-preset="60,64,67,70">C7 · 属七</button>
+          <button class="pill warn" data-preset="60,61,62">半音簇 · 最难听</button>
+          <button class="pill warn" data-preset="60,61,66">三全音 + 小二度</button>
+          <button class="pill neutral" data-preset="72,77,79">路小雨·密集 C5-F5-G5</button>
+          <button class="pill neutral" data-preset="67,72,77">路小雨·开放 G4-C5-F5</button>
+        </div>
+
+        <div class="piano" id="piano"></div>
+
+        <div class="canvas-wrap"><canvas id="scope"></canvas></div>
+        <div class="hover-hint" id="hoverHint">悬停某个键可以看到它的前 6 个泛音频率。</div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="side">
+      <div class="card">
+        <h3>联合不协和度 · Joint Score</h3>
+
+        <!-- 大分数：联合分数 -->
+        <div class="score-box">
+          <div class="score-label">α·PL + β·(HD/10)</div>
+          <div class="score-num" id="scoreNum">0.0000</div>
+          <div class="score-bar"><div id="scoreBar"></div></div>
+          <div class="chord-label sub" id="chordLabel">点键开始</div>
+        </div>
+
+        <!-- 三分数并列 -->
+        <div class="multi-scores" style="margin-top:14px;">
+          <div class="mini-score pl">
+            <div>
+              <div class="lab">PLOMP-LEVELT</div>
+              <div class="hint">物理粗糙度（肉体）</div>
+            </div>
+            <div class="val" id="plVal">0.0000</div>
+          </div>
+          <div class="mini-score hd">
+            <div>
+              <div class="lab">TENNEY HD</div>
+              <div class="hint">认知复杂度（精神）</div>
+            </div>
+            <div class="val" id="hdVal">0.0000</div>
+          </div>
+          <div class="mini-score joint">
+            <div>
+              <div class="lab">JOINT</div>
+              <div class="hint">α·PL + β·(HD/10)</div>
+            </div>
+            <div class="val" id="jointVal">0.0000</div>
+          </div>
+        </div>
+
+        <!-- α/β 滑块 -->
+        <div class="slider-wrap">
+          <div class="slabel">
+            <span>权重分配</span>
+            <span><span class="alpha" id="alphaLab">α=0.50</span> · <span class="beta" id="betaLab">β=0.50</span></span>
+          </div>
+          <input type="range" id="betaSlider" min="0" max="1" step="0.01" value="0.5" />
+          <div class="slabel" style="margin-top:6px; margin-bottom:0;">
+            <span>100% 物理</span><span>100% 认知</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>已选音符</h3>
+        <div class="note-list" id="noteList">
+          <div class="empty-hint">还没选 · 点下面键盘或上面快捷按钮</div>
+        </div>
+        <div class="controls">
+          <button class="btn btn-play" id="btnPlay" disabled>▶ 播放</button>
+          <button class="btn btn-clear" id="btnClear">清空</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>键盘快捷键</h3>
+        <div style="font-family:var(--mono); font-size:12px; color:var(--ink-dim); line-height:1.9;">
+          白键：<b style="color:var(--accent)">Z X C V B N M , . / Q W E R T Y</b><br/>
+          黑键：<b style="color:var(--accent)">S D G H J 2 3 5 6 7</b><br/>
+          <span style="color:var(--ink-mute);">（按一下切换选中，不按住）</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================== 结论栏 ====================== -->
+  <section class="section">
+    <h2>结论 <span class="accent">/ 我们学到了什么</span></h2>
+    <div class="subtitle">从"两个正弦叠起来好不好听" 到 "人类听感的联合损失函数"</div>
+    <div class="concl-grid">
+
+      <div class="concl-card blue">
+        <h3>① 乐理 = 高维空间里的低维流形</h3>
+        <p>
+          钢琴 88 个键任选 3 个就是 <code>C(88,3) ≈ 10 万</code> 种组合，任选 4 个就是 200 多万。
+          这是一个巨大的高维噪声空间。而人类觉得"好听"的组合，其实密集地聚集在一个狭窄、低维的流形上。
+        </p>
+        <p>
+          几百年来，巴赫、莫扎特、周杰伦都在干同一件事：用耳朵当损失函数，在这个 200 万维的空间里做梯度下降，最终收敛到那个低维流形。这个流形，我们给它起了个名字叫"乐理"。
+        </p>
+      </div>
+
+      <div class="concl-card">
+        <h3>② 低音区相邻键 = 烂泥</h3>
+        <p>
+          <code>C4 + D4</code> 的基频差只有 32 Hz。在 200 Hz 以下的低频区，临界频带的峰值 Δf 只有 <code>≈ 20 Hz</code>，32 Hz 正好砸在粗糙度尾部死磕。PL 分数 <code>0.53</code>。
+        </p>
+        <p>
+          把 D4 挪到 D5（跨八度大九度），基频差 326 Hz 远超临界带，PL 直接降到 <code>0.20</code>—— 降了 2.7 倍。低音区永远不要堆密集音程，这是物理铁律。
+        </p>
+      </div>
+
+      <div class="concl-card orange">
+        <h3>③ 中高音区可以靠近</h3>
+        <p>
+          同样的 Δf=20 Hz，在 100 Hz 附近砸在粗糙度峰值（最刺耳），在 2000 Hz 附近根本听不出。
+          这是因为耳蜗基底膜的临界频带宽度<b>随频率线性放大</b>。
+        </p>
+        <p>
+          所以高音区可以堆得密一点，比如 <code>C5 + D5</code> 的 PL 比 <code>C4 + D4</code> 低得多。作曲家把紧张的音程往上拉是常识。
+        </p>
+      </div>
+
+      <div class="concl-card purple">
+        <h3>④ 路小雨悖论 —— Gemini 也会胡扯</h3>
+        <p>
+          周杰伦《路小雨》里 <code>G4-C5-F5</code>（四度叠置）听起来很空灵。Gemini 说把 G5 降八度到 G4 后 PL 会变好，但实测：
+          <br/><b>密集 C5-F5-G5</b>：PL=<code>0.44</code>，HD=<code>12.34</code>
+          <br/><b>开放 G4-C5-F5</b>：PL=<code>0.50</code>，HD=<code>14.34</code>
+        </p>
+        <p>
+          <b>两个公式都说密集更协和！</b>Gemini 的"周杰伦赢了"是马后炮。真相可能是：空灵感不在这俩公式里，而在音色稀疏度、音域宽度、泛音稀释等更高维的心理声学变量里。公式还不够完整。
+        </p>
+      </div>
+
+      <div class="concl-card pink">
+        <h3>⑤ 其实根本没有"大三 vs 小三"，只有 voicing 之争</h3>
+        <p>
+          Tenney HD 有个反直觉的事实：<b>所有三和弦（大三、小三、它们的转位）的 HD 都相等 = 11.81</b>。
+          因为音程集合永远是 <code>{3, 4, 5}</code> 半音两两对，求和一模一样。HD 根本分不出大三和小三。
+        </p>
+        <p>
+          扫完 C4-B5 全 1760 个组合：
+          <br/>· 纯 PL 的 Top 1 是 <b>Sus4</b>（如 A4-E5-B5），因为 <code>1:4/3:3/2</code> 比 <code>4:5:6</code> 更简单。
+          <br/>· 联合分数 Top 1 是 <b>G4-D5-B5</b>，但它赢不是因为"大三"，而是因为<b>跨八度把 HD 从 11.81 压到 9.81</b>（<code>3:2 → 3:1</code>）。
+        </p>
+        <p>
+          所以"最协和 = 大三"是乐理的粗略叙事。更准的说法是：<b>最协和 = 跨八度开放 voicing 的三和弦（大小不区分）</b>。
+        </p>
+      </div>
+
+      <div class="concl-card">
+        <h3>⑥ 两个公式不完全正交</h3>
+        <p>
+          趋势上都认同"简单整数比 → 协和"。但在<b>音区（八度位置）</b>上分歧最大：
+        </p>
+        <p>
+          <b>Plomp-Levelt</b>：极度依赖音区。同一个大二度，低音区 PL 比高音区高 2.7 倍。
+          <br/><b>Tenney HD</b>：不依赖音区。只看半音数 <code>mod 12</code>，跨八度用乘 2 修正。
+        </p>
+        <p>
+          所以联合分数最能捕捉"同一乐理音程在不同 voicing 下听感差异"，这正是编曲师和混音师每天在做的事。
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ====================== Introduction 8 步学习路径 ====================== -->
+  <section class="section">
+    <h2>学习路径 <span class="accent">/ 我们是怎么一步步推到 Plomp-Levelt 的</span></h2>
+    <div class="subtitle">按墨哥在 conversation.md 里实际思考顺序走一遍 · 前 3 步默认展开，后面点开看</div>
+    <div class="path-list">
+
+      <details class="path-step" open>
+        <summary>
+          <div class="step-num">1</div>
+          <div class="step-title">一个键</div>
+          <div class="step-gist">基频 + 整数倍泛音列</div>
+        </summary>
+        <div class="step-body">
+          <p>敲一个钢琴键，空气里<b>不是只有一个频率</b>。实际上同时有一整串：</p>
+          <div class="formula-box">f₀, 2f₀, 3f₀, 4f₀, 5f₀, 6f₀, ...</div>
+          <p>
+            这就是<b>谐波列</b>（harmonic series）。为什么必须是整数倍？因为琴弦两端被钉死，它能稳定振动的只能是半波长的整数分之一——驻波约束，宇宙法则。
+            吉他、小提琴、人声带都遵循这个规则。只有鼓和镲例外（二维膜的振动方程是贝塞尔函数，泛音不是整数倍，所以鼓没有明确音高）。
+          </p>
+          <p>
+            在脑子里可以画成"很多行" —— 每行一个正弦波，上面的行频率高、波更密；下面的行频率低、波稀疏。这本质上就是傅里叶频谱图。
+          </p>
+          <div class="takeaway"><b>学到了：</b>一个键 = 一整个谐波族，不是单一频率。</div>
+        </div>
+      </details>
+
+      <details class="path-step" open>
+        <summary>
+          <div class="step-num">2</div>
+          <div class="step-title">两个键</div>
+          <div class="step-gist">两套谐波列叠加 = 干涉问题</div>
+        </summary>
+        <div class="step-body">
+          <p>按下第二个键，又是一整套泛音列，叠在第一套之上。</p>
+          <blockquote class="detour">
+            <b>墨哥原话：</b>"如果是哆瑞，我现在把瑞的也叠加到这个图上，那此时我又能看到一个。但是呢，瑞永远会比哆都高一个，那它的所有泛音都会高一点。那它们的泛音列，有没有一种可能就是哆瑞的瑞的泛音列最后跟哆的泛音列有一些重合？哎，那这就有意思了。"
+          </blockquote>
+          <p>
+            好不好听取决于这两套泛音<b>重合多少 vs 错开多少</b>。重合的频率在空气里同相位叠加，能量增强；错开的频率相互干涉，产生打架。
+          </p>
+          <div class="takeaway"><b>学到了：</b>两个键的美丑是两套谐波族的<b>干涉问题</b>，不是两个"单一频率"在叠加。</div>
+        </div>
+      </details>
+
+      <details class="path-step" open>
+        <summary>
+          <div class="step-num">3</div>
+          <div class="step-title">为什么简单整数比就好听</div>
+          <div class="step-gist">泛音列重合密度 = 协和度</div>
+        </summary>
+        <div class="step-body">
+          <p>墨哥的猜想是对的："如果它们重合的很多，人就会觉得好听"。举两个例子：</p>
+          <p>
+            <b>Do 和 Sol（频率比 3:2）</b>：
+            <br/>Do 的泛音: <code>f₀, 2f₀, 3f₀, 4f₀, 5f₀, 6f₀...</code>
+            <br/>Sol 的泛音: <code>1.5f₀, 3f₀, 4.5f₀, 6f₀, 7.5f₀...</code>
+            <br/>→ <code>3f₀</code> 和 <code>6f₀</code> <b>完美重合</b>。强化共振，不打架。
+          </p>
+          <p>
+            <b>Do 和 Re（频率比 9:8）</b>：
+            <br/>Do 的 8 倍泛音（<code>8f₀</code>）和 Re 的 9 倍泛音（<code>9·8f₀/8=9f₀</code>）才重合，但这两个泛音都已经非常微弱了。中间每一级都有轻微错开，每一级都产生摩擦。
+          </p>
+          <div class="takeaway"><b>学到了：</b>协和度的本质 = 两套谐波族的<b>重合密度</b>。简单整数比 → 低次泛音就开始大量重合 → 协和。</div>
+        </div>
+      </details>
+
+      <details class="path-step">
+        <summary>
+          <div class="step-num">4</div>
+          <div class="step-title">拍音的数学 · 和差化积</div>
+          <div class="step-gist">Δf 决定振幅包络的闪烁频率</div>
+        </summary>
+        <div class="step-body">
+          <p>
+            高中三角学的一个基本公式说：两个相近频率的 sin 叠起来，会产生"忽大忽小"的效果。这叫<b>和差化积</b>：
+          </p>
+          <div class="formula-box">$$\sin(2\pi f_1 t) + \sin(2\pi f_2 t) = 2\cos\!\left(\pi (f_1-f_2) t\right) \cdot \sin\!\left(\pi (f_1+f_2) t\right)$$</div>
+          <p>
+            分解后看到两个东西：
+            <br/>· 后面的 <code>sin</code> 项：频率是 <code>(f₁+f₂)/2</code>，这是你听到的"平均音高"
+            <br/>· 前面的 <code>cos</code> 项：频率是 <code>|f₁-f₂|</code>，这是<b>振幅包络</b>——整个声音的音量在以这个频率"忽大忽小"
+          </p>
+          <p>
+            这就是<b>拍音</b>（beats）。墨哥在低音 C+D 上亲耳听到的"摩托车嗡嗡嗡"，就是这个 cos 包络在 15-30 Hz 的闪烁。
+          </p>
+          <div class="takeaway"><b>学到了：</b>两个近频率相加 = 平均音高 × 振幅包络。包络的闪烁速度 = 频率差。</div>
+        </div>
+      </details>
+
+      <details class="path-step">
+        <summary>
+          <div class="step-num">5</div>
+          <div class="step-title">墨哥走过的弯路 —— 相位差 φ 有没有关系？</div>
+          <div class="step-gist">没有 · 人耳对相位是色盲</div>
+        </summary>
+        <div class="step-body">
+          <blockquote class="detour">
+            <b>墨哥原本的猜想：</b>"两个 sin 函数硬叠加，如果只错了一个 φ 相位差，按照我们高中理解，如果它叠加是 π/2 的某个整数，那是不是也许它叠加就会叠得比较好看一点。但如果说错了 π/12，这种叠加起来是不是就会比较难看，会有那种拍音之类的？"
+          </blockquote>
+          <p><b>这个猜想是错的。</b>为什么？两个理由：</p>
+          <p>
+            <b>(1) 人耳对纯相位差几乎是"色盲"。</b>你调整 <code>sin(x) + sin(x+φ)</code> 里的 φ，波形确实会天差地别——合成波的振幅变大变小、甚至干涉相消——但听感上<b>基本没差别</b>。听觉神经不直接编码相位，它编码的是"哪些频率有能量"。
+          </p>
+          <p>
+            <b>(2) 真正决定"难听"的不是 φ，是 Δf。</b>和差化积告诉我们，两个频率差决定了振幅包络的闪烁速度。闪烁太快耳朵处理不过来 → 刺耳。这跟 φ 一毛钱关系都没有。
+          </p>
+          <div class="takeaway"><b>学到了：</b>"波形好不好看"和"声音好不好听"是两回事。耳朵听频率和能量，不听相位。</div>
+        </div>
+      </details>
+
+      <details class="path-step">
+        <summary>
+          <div class="step-num">6</div>
+          <div class="step-title">大脑的"采样频率"崩溃区</div>
+          <div class="step-gist">20-100 Hz 的振幅闪烁最刺耳</div>
+        </summary>
+        <div class="step-body">
+          <p>现在我们知道 Δf 决定包络闪烁速度。但闪烁多快才算难受？分三段看：</p>
+          <p>
+            <b>闪烁 1-10 Hz</b>：大脑能逐帧跟上，听到柔和的波动。这就是合唱的"荡漾感"，或者吉他调音时两根弦差 2 Hz 的"嗡——嗡——"。不难受，甚至好听。
+          </p>
+          <p>
+            <b>闪烁 20-100 Hz</b>：<b>大脑既不能逐帧数，也不能池化成一个音。</b>基底膜被迫在两种处理模式之间切换失败，产生生理层面的机械摩擦感。这就是"刺耳"的物理本质——不是心理紧张，是真实的生理崩溃。
+          </p>
+          <p>
+            <b>闪烁 &gt; 几百 Hz</b>：大脑直接放弃"数帧"，把快速闪烁池化成一个全新的音高。这就是为啥单个高频键听起来像"手术刀"——锋利但平滑，不抖。
+          </p>
+          <div class="takeaway"><b>学到了：</b>"刺耳"是大脑处理模式切换失败的生理现象，20-100 Hz 是它的死亡区间。</div>
+        </div>
+      </details>
+
+      <details class="path-step">
+        <summary>
+          <div class="step-num">7</div>
+          <div class="step-title">临界频带修正 —— 墨哥揪出的"50Hz 漏洞"</div>
+          <div class="step-gist">死亡区间随频率动态滑动</div>
+        </summary>
+        <div class="step-body">
+          <blockquote class="detour">
+            <b>墨哥的反问：</b>"你说 Do 的 200 Hz 和 Sol 的 150 Hz 那些，不是照样有他妈一个 50 Hz 的差距吗？这不也落在你说的 20-100 Hz 刺耳区间里吗？为啥我听不出来？你他妈睁着眼睛说瞎话呀！"
+          </blockquote>
+          <p>
+            <b>漂亮，这一枪打在要害上。</b>"20-100 Hz 死亡区间"只是个粗略的近似，真实情况是——这个区间<b>随频率动态滑动</b>：
+          </p>
+          <p>
+            · 在 150 Hz 附近（低频区），最刺耳的 Δf 只有 <code>≈ 19 Hz</code>。50 Hz 早就逃出去了。
+            <br/>· 在 440 Hz 附近，最刺耳的 Δf 约 <code>26 Hz</code>。
+            <br/>· 在 1000 Hz 附近，最刺耳的 Δf 约 <code>36 Hz</code>。
+            <br/>· 在 2000 Hz 附近，最刺耳的 Δf 约 <code>58 Hz</code>。
+          </p>
+          <p>
+            这个"随频率变宽的难受区"叫<b>临界频带</b>（Critical Band），是耳蜗基底膜上每一段对频率分辨率的物理属性。低频区分辨率高（挨近就打架），高频区分辨率差（差大点也无所谓）。
+          </p>
+          <div class="takeaway"><b>学到了：</b>临界频带是个随频率线性变宽的动态滑动窗口，不是固定的死亡区间。</div>
+        </div>
+      </details>
+
+      <details class="path-step">
+        <summary>
+          <div class="step-num">8</div>
+          <div class="step-title">从"耳朵猜想"到 Plomp-Levelt 公式</div>
+          <div class="step-gist">假设结构 + 实验拟合系数</div>
+        </summary>
+        <div class="step-body">
+          <p>1965 年 Plomp & Levelt 把上面这套物理直觉量化成了一个公式：</p>
+          <div class="formula-box">$$d(f_1, f_2, v_1, v_2) = \min(v_1, v_2) \cdot \left(e^{-3.5x} - e^{-5.75x}\right), \quad x = s \cdot |f_1 - f_2|$$</div>
+          <p>它的诞生是两步走的工程套路：</p>
+          <p>
+            <b>第一步 · 假设公式结构</b>：粗糙度是"先升后降"的山峰曲线，于是选<b>双指数差</b> <code>e^(ax) - e^(bx)</code>（信号处理、药代动力学里描述脉冲响应的经典结构）。<b>选择结构本身不靠实验，靠数学审美。</b>
+          </p>
+          <p>
+            <b>第二步 · 实验拟合系数</b>：让一群人做双盲实验打分，用最小二乘凑出 <code>a=-3.5, b=-5.75</code>，以及临界频带公式里的 <code>0.0207</code>、<code>18.96</code>、<code>0.24</code>。<b>这些具体数字靠实验，是"人类听感的参数化回归"。</b>
+          </p>
+          <p>
+            这就是为什么墨哥骂它"作弊"是对的——它不是从神经元方程里推出来的。但它<b>抓住了现象的骨架</b>（双指数差 + 临界频带缩放），剩下的让数据填。这在工程上叫<b>模型选择 + 参数估计</b>，和深度学习先定架构再训权重是一个套路。
+          </p>
+          <div class="takeaway"><b>学到了：</b>所谓"物理公式"有两种——一种从第一性原理推出来（<code>F=ma</code>），一种是假设结构 + 拟合系数（Plomp-Levelt）。后者不丢人，是工程学的常态。</div>
+        </div>
+      </details>
+
+    </div>
+  </section>
+
+  <details class="theory" open>
+    <summary>
+      <span>理论背景 / 这玩意怎么算的</span>
+      <span class="chev">▶</span>
+    </summary>
+    <div class="content">
+
+      <p>
+        先把结论放在前面：一个和弦"好听不好听"，不是玄学，是可以算出数字的。下面四个公式就是全部机关。
+        每个键不是只发一个频率，而是一整串；这些频率凑到一起，要么对齐，要么打架。打架的量化分数就是"不协和度"。
+      </p>
+
+      <h4><span class="idx">公式 1</span>MIDI 号 → 频率（十二平均律）</h4>
+      <div class="formula">$$f(n) = 440 \times 2^{(n-69)/12}$$</div>
+      <p>
+        为什么指数里挂着 <code>1/12</code>？因为人耳听到的"高一个八度"对应的是<b>频率翻一倍</b>——不是加一个固定值，是乘 2。
+        而一个八度被人类约定切成 12 份等宽，想让每走一步都是同一个乘法比例 <code>r</code>，且连乘 12 次等于 2，那唯一的解就是 <code>r = 2^(1/12) ≈ 1.05946</code>。
+        所以"半音"在线性刻度上看大小不一，在对数刻度上才是等间距的。MIDI 号就是这个对数刻度的整数轴，69 这个编号被规定给 A4=440Hz。
+      </p>
+
+      <h4><span class="idx">公式 2</span>谐波列（一个键真实发出的东西）</h4>
+      <div class="formula">$$f_k = k \cdot f_0,\quad A_k = \rho^{k-1},\quad \rho = 0.88$$</div>
+      <p>
+        敲一个 C4 键，琴弦同时以 <code>f_0, 2f_0, 3f_0, ...</code> 震动。这不是选择，是物理约束：
+        弦两端被钉死，驻波只能是弦长的整数分之一，对应的频率必然是基频的整数倍。
+        吉他弦、人声带、长笛管子里的空气柱，全都遵守这个规则。鼓、镲是例外——膜和板的模态不是整数比，所以鼓敲不出明确音高。
+      </p>
+      <p>
+        振幅的指数衰减 <code>ρ^(k-1)</code> 和 <code>ρ=0.88</code> 不是物理常数，是给钢琴音色拟合出来的经验值。
+        真钢琴大约就是这个衰减速度：基音最响，高次泛音越来越弱。换成小提琴或圆号你得换 ρ，但定性结论不变。
+      </p>
+
+      <h4><span class="idx">公式 3</span>Plomp-Levelt 单对粗糙度（灵魂）</h4>
+      <div class="formula">$$d(f_1,f_2,v_1,v_2)=\min(v_1,v_2)\cdot\bigl(e^{-3.5x}-e^{-5.75x}\bigr)$$</div>
+      <div class="formula">$$x=s\cdot|f_1-f_2|,\qquad s=\frac{0.24}{0.0207\cdot f_{\min}+18.96}$$</div>
+      <p>
+        这是整个模型的灵魂。它在回答一个纯心理声学的问题：<b>给你两个正弦波，频率差多少的时候耳朵最难受？</b>
+      </p>
+
+      <div class="callout" style="border-left-color:var(--hot); background:rgba(255,107,138,0.06);">
+        <b style="color:var(--hot);">⚠ 公式是怎么搞出来的？—— 两步走（模型选择 + 实验拟合）</b><br/>
+        这<b>不是</b>从第一性原理推出来的，不是像 <code>F=ma</code> 那种从宇宙本质里导出的。它的诞生是工程学套路的"两步走"：
+        <p style="margin:10px 0 4px;"><b style="color:var(--hot);">第 1 步：先假设公式应该有什么样的结构。</b></p>
+        人类听觉粗糙度曲线的定性形状是："频率差 = 0 时不难受 → 越大越难受到一个峰值 → 再大又慢慢衰减回不难受"。
+        这是一条"先升后降"的山峰曲线。数学上能造出这形状的候选很多：抛物线不行（会跑到负数）；高斯行但衰减太快；
+        <b>双指数差 <code>e^{ax} - e^{bx}</code>（<code>b &lt; a &lt; 0</code>）</b>最合适——信号处理、药代动力学里描述脉冲响应的经典结构。两个人于是选了这个结构。
+        <p style="margin:10px 0 4px;"><b style="color:var(--hot);">第 2 步：找人做双盲实验，用曲线拟合凑系数。</b></p>
+        1965 年 Plomp & Levelt 让一群受试者打分两个纯音叠加的难受程度，1993 年 Sethares 把数据点丢进最小二乘，
+        凑出 <code>a=-3.5, b=-5.75</code>，和临界频带公式里的 <code>0.0207</code>、<code>18.96</code>、<code>0.24</code>。换一批人、换一个实验室的仪器，这些数字会略微浮动。
+        <p style="margin:10px 0 0;">
+        <b style="color:var(--hot);">所以这公式是"人类听感的参数化回归"，不是定理。</b>墨哥骂它"作弊"是对的——它不是从耳蜗神经元方程推出来的。
+        但它抓住了现象的骨架（双指数差 + 临界频带缩放），剩下的数字让实验来填。这在工程上叫<b>模型选择 + 参数估计</b>，和深度学习先定网络结构再 SGD 训权重是一个思路。
+        </p>
+      </div>
+      <p>
+        结构本身很漂亮。两个指数相减 <code>e^{-3.5x} - e^{-5.75x}</code> 在 <code>x ≈ 0.22</code> 处有峰值：差太近听成一个音（<code>x→0, d→0</code>），差太远各归各的（<code>x→∞, d→0</code>），中间有个最刺耳的区间。
+        缩放因子 <code>s</code> 就是<b>临界频带的逆</b>——同样的 Hz 差，放在低频区（<code>s</code>大）更刺耳，放在高频区（<code>s</code>小）就没感觉。
+      </p>
+      <div class="callout">
+        <b>数值直觉</b>：在 440Hz 附近，<code>s = 0.24 / (0.0207·440 + 18.96) ≈ 0.00859</code>，峰值 <code>x=0.22</code> 对应的频率差 <code>|Δf| = 0.22/s ≈ 25.6 Hz</code>。
+        这就是"440 Hz 附近最砸耳朵的频率差约 26 Hz"。放到 100 Hz 附近，峰值挪到约 12 Hz；放到 1000 Hz 附近，峰值挪到约 50 Hz。
+        低频分辨率高，一点点差就能听出来；高频分辨率差，差 50 Hz 才刚开始难受。
+      </div>
+      <p>
+        前置的 <code>min(v_1,v_2)</code> 是能量门槛：如果两条正弦里有一条超弱，就算它俩差在峰值上，耳朵也听不太出来。
+        这就是为什么基音对基音的打架比基音对第 6 泛音的打架更惨烈——后者振幅只剩 <code>0.88^5 ≈ 0.527</code>。
+      </p>
+
+      <h4><span class="idx">公式 4</span>和弦总不协和度</h4>
+      <div class="formula">$$D(\text{chord}) = \sum_{i<j}\,\sum_{p\in H_i}\,\sum_{q\in H_j}\, d(f_p,f_q,v_p,v_q)$$</div>
+      <p>
+        一个和弦里有 N 个键，每个键发 6 个谐波，总共 6N 个正弦分量。把所有<b>跨不同键</b>的泛音对枚举一遍，每对算一次 <code>d(·)</code>，加总。
+      </p>
+      <p>
+        注意是 <code>i&lt;j</code>——只枚举跨键对，同一个键内部的泛音对不算。原因很简单：同一个键的泛音结构是固定的，
+        无论在哪个和弦里它都贡献同样一坨常数，对"哪个和弦更协和"的排序没影响。算了只是白浪费 CPU。
+      </p>
+
+      <h4><span class="idx">公式 5</span>Tenney Harmonic Distance（认知复杂度 · 纯数学派）</h4>
+      <div class="formula">$$\mathrm{HD}(f_1, f_2) = \log_2(a \cdot b), \quad \text{其中}\ \frac{f_1}{f_2} \approx \frac{a}{b}\ \text{(最简整数比)}$$</div>
+      <p>
+        Plomp-Levelt 只算了<b>物理粗糙度</b>（基底膜在打架），但人耳觉得"好听"还有<b>第二套系统</b>：大脑皮层自动把频率比吸附到最简整数比（八度 <code>2:1</code>，五度 <code>3:2</code>，四度 <code>4:3</code>）。比例越简单，大脑解码越轻松。
+      </p>
+      <p>
+        Tenney 1964 年给出这个<b>纯数学</b>公式：<code>HD = log₂(a·b)</code>，分子分母乘积越小，HD 越低。**一行公式，零实验参数**。
+        和弦的 HD = 所有两两音对的 HD 之和。
+      </p>
+      <div class="aside">
+        <b style="color:#d8a0ff;">十二平均律 → 纯律整数比吸附表：</b>
+        <table class="tbl">
+          <tr><th>半音</th><th>音程</th><th>纯律比</th><th style="text-align:right;">HD</th></tr>
+          <tr><td>0</td><td>齐度</td><td>1:1</td><td class="num">0.000</td></tr>
+          <tr><td>1</td><td>小二度</td><td>16:15</td><td class="num">7.907</td></tr>
+          <tr><td>2</td><td>大二度</td><td>9:8</td><td class="num">6.170</td></tr>
+          <tr><td>3</td><td>小三度</td><td>6:5</td><td class="num">4.907</td></tr>
+          <tr><td>4</td><td>大三度</td><td>5:4</td><td class="num">4.322</td></tr>
+          <tr><td>5</td><td>纯四度</td><td>4:3</td><td class="num">3.585</td></tr>
+          <tr><td>6</td><td>三全音</td><td>45:32</td><td class="num">10.492</td></tr>
+          <tr><td>7</td><td>纯五度</td><td>3:2</td><td class="num">2.585</td></tr>
+          <tr><td>8</td><td>小六度</td><td>8:5</td><td class="num">5.322</td></tr>
+          <tr><td>9</td><td>大六度</td><td>5:3</td><td class="num">3.907</td></tr>
+          <tr><td>10</td><td>小七度</td><td>16:9</td><td class="num">7.170</td></tr>
+          <tr><td>11</td><td>大七度</td><td>15:8</td><td class="num">6.907</td></tr>
+          <tr><td>12</td><td>纯八度</td><td>2:1</td><td class="num">1.000</td></tr>
+        </table>
+        看表就懂了：八度（<code>HD=1</code>）最简单，纯五度（<code>2.585</code>）其次，三全音（<code>10.49</code>）比小二度还复杂——这就是它被中世纪叫"魔鬼音程"的数学原因。
+      </div>
+
+      <h4><span class="idx">公式 6</span>联合损失函数（物理 + 认知）</h4>
+      <div class="formula">$$D_{\text{joint}} = \alpha \cdot D_{\text{PL}} + \beta \cdot \frac{D_{\text{HD}}}{10}, \quad \alpha + \beta = 1$$</div>
+      <p>
+        人耳觉得好听其实是<b>两套系统同时打分</b>。耳蜗（生理）管粗糙度，皮层（认知）管结构感。
+        滑块在右侧面板，<code>β</code> 越大越偏"认知派"，<code>β=0</code> 退化成纯 Plomp-Levelt。除以 10 是把 HD 的量级拉到和 PL 相当。
+      </p>
+      <div class="callout" style="border-left-color:var(--warm); background:rgba(255,210,122,0.06);">
+        <b style="color:var(--warm);">实验跑出来的反转</b>：在单独用 Plomp-Levelt 扫 C4-B5 所有三音组合时，<b>Top 1 不是大三和弦，是 Sus4 挂四和弦</b>——因为 <code>1:4/3:3/2</code> 比大三的 <code>4:5:6</code> 还简单。
+        加入 Tenney HD 做联合（<code>α=β=0.5</code>）之后，<b>大三和弦（G4-D5-B5）才终于升到 Top 1</b>。
+        这说明"乐理上的协和" = <b>低粗糙度 + 低认知复杂度</b>的双重优化，单靠一套公式都不够。
+      </div>
+
+      <h4>那些反直觉的结论</h4>
+      <div class="aside">
+        <b style="color:var(--accent-2);">(a) 为什么大三和弦听起来"明亮"？</b><br/>
+        C-E-G 的频率比接近 <code>4:5:6</code>。C 的第 5 泛音（5f₀）恰好落在 E 的第 4 泛音（4·5f₀/4=5f₀）附近；C 的第 3 泛音（3f₀）恰好撞上 G 的第 2 泛音（2·3f₀/2=3f₀）。
+        大量泛音在同一个频率重合，基本不在"粗糙度峰值"区间上打架，所以公式 3 给出的分数极低。这不是文化约定，是 4:5:6 这个比例的数学特权。
+      </div>
+      <div class="aside">
+        <b style="color:var(--hot);">(b) 为什么半音簇（C-C#-D）难听？</b><br/>
+        三个音之间的基频差只有 15-17 Hz（低频区），刚好砸在"耳朵分辨率边界"上——不够近到融合成一个音，又不够远到听成两个独立音。
+        更惨的是 6 个谐波一叠加，跨键泛音对里有一大堆落在峰值区间。分数能飙到大三和弦的 2-3 倍。
+      </div>
+      <div class="aside">
+        <b style="color:var(--warm);">(c) 同一个音程，不同八度位置，分数不一样！</b><br/>
+        最反直觉的一点。"大二度 = 2 个半音"是乐理抽象；但放到模型里：
+        <table class="tbl">
+          <tr><th>组合</th><th>MIDI</th><th style="text-align:right;">D</th></tr>
+          <tr><td>C4 + D4 （紧挨）</td><td>60, 62</td><td class="num">0.533</td></tr>
+          <tr><td>D4 + C5 （跨八度）</td><td>62, 72</td><td class="num">0.251</td></tr>
+          <tr><td>C4 + D5 （跨八度+大二度）</td><td>60, 74</td><td class="num">0.199</td></tr>
+        </table>
+        同样叫"大二度/小七度/大九度"，数字差了 2.7 倍。原因是泛音重合模式完全变了：
+        C4 和 D4 的基频只差 32 Hz，狠狠卡在峰值；但 C4 和 D5 的基频差了 326 Hz，早就跨过粗糙度的衰减尾部了，只剩零星几对高次泛音还在打架。
+        所以"把音拉开一个八度会更和谐"是真的，这是乐理教不了你、但公式一眼看穿的事实。
+      </div>
+
+      <h4>自测 · Python vs JS</h4>
+      <p>
+        所有以下数值由 <code>music_probe.py</code> 的 <code>chord_dissonance</code> 跑出，再由本页的 JS 实现复算，误差 <code>&lt; 1e-9</code>。你可以打开浏览器控制台，
+        输入 <code>chordDissonance([60,64,67])</code> 自行验证。
+      </p>
+      <table class="tbl" id="verifyTable">
+        <tr><th>组合</th><th>MIDI</th><th style="text-align:right;">PL (JS)</th><th style="text-align:right;">HD (JS)</th><th style="text-align:right;">|Δ PL|</th><th style="text-align:right;">|Δ HD|</th></tr>
+      </table>
+      <p style="color:var(--ink-mute); font-size:12px;">
+        提示：如果你在另一台机器上用了不同 Python 版本的 <code>math.exp</code>，小数后面可能会有 1e-15 级别的浮点差别，这是正常现象。
+      </p>
+
+    </div>
+  </details>
+
+  <footer>built with web audio + vanilla JS + KaTeX · no framework · no npm</footer>
+</div>
+
+</body>
+</html>
